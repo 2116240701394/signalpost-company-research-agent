@@ -22,6 +22,9 @@ Signalpost Company Research Agent is a Python application that discovers and ref
 
 Official API documentation: https://data.brreg.no/enhetsregisteret/api/dokumentasjon/
 
+
+
+
 ## Requirements
 
 - Python 3.10 or a compatible version supported by the project.
@@ -95,6 +98,14 @@ These counts describe the reported run and may change after subsequent updates.
 - `check_db.py` — database inspection utility.
 - `inspect_data.py` — stored-data inspection utility.
 - `quality_check.py` — additional data-quality checks, if included.
+
+## Runcost: $0
+Signalpost has virtually zero mandatory operating costs. 
+Python and SQLite are free and open-source, while the Brønnøysund Register Centre API provides access to official Norwegian company data without requiring a paid commercial data subscription. 
+The application runs on a standard computer, eliminating the need for cloud hosting, dedicated servers, or GPUs. Since the current technology stack does not use paid AI models, there are no AI inference fees.   By combining free public data, lightweight processing, and local storage, Signalpost delivers cost-effective company research with minimal infrastructure and maintenance expenses. 
+Optional hosting and applicable API usage restrictions may introduce costs at scale
+
+
 
 ## License
 
