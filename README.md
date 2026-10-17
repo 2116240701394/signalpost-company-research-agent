@@ -30,9 +30,9 @@ Official API documentation: https://data.brreg.no/enhetsregisteret/api/dokumenta
 
 ## Installation
 
-Clone or download this repository, then open a terminal in the project folder.
+Clone or download this repository and open a terminal in the project folder.
 
-Install dependencies:
+Install the dependencies:
 
 ```bash
 python -m pip install -r requirements.txt
@@ -48,28 +48,37 @@ python main.py
 
 The agent discovers candidate companies, retrieves available registry records, and saves the results to the SQLite database.
 
-## Database
+## Database Inspection
 
 The application uses `companies.db` to store company records and related research data. The exact tables and fields are defined by the application's database schema.
 
-To inspect the database, run:
+Inspect the database by running:
 
 ```bash
 python check_db.py
+```
+
+Inspect stored records by running:
+
+```bash
 python inspect_data.py
 ```
 
-If included in the project, `quality_check.py` can be used for additional basic database checks.
+If `quality_check.py` is included in the repository, run it for additional basic data-quality checks:
+
+```bash
+python quality_check.py
+```
 
 ## Data Sources and Limitations
 
-The primary data source is the official Brønnøysund Register Centre API. Available fields depend on what the registry provides. A successfully retrieved record does not guarantee that every possible company fact is available or independently verified.
+The primary data source is the official Brønnøysund Register Centre API. Available fields depend on the information provided by the registry. A successfully retrieved record does not guarantee that every possible company fact is available or independently verified.
 
-Source links and retrieval timestamps should be checked before relying on individual facts. The application should not be treated as an independent verification of financial information unless that verification is implemented explicitly.
+Source links and retrieval timestamps should be checked before relying on individual facts. The application should not be treated as an independent verification of financial information unless that verification is explicitly implemented.
 
 ## Current Test Run
 
-Record the results from your latest successful run here:
+The latest reported successful run produced these results:
 
 - Companies in database: 1,020
 - Current facts stored: 11,050
@@ -83,12 +92,13 @@ These counts describe the reported run and may change after subsequent updates.
 - `main.py` — main application entry point.
 - `requirements.txt` — Python dependencies.
 - `companies.db` — SQLite database, if included in the submission.
-- `check_db.py` — database inspection/checking utility.
-- `inspect_data.py` — data inspection utility.
-- `quality_check.py` — additional basic data-quality checks, if included.
+- `check_db.py` — database inspection utility.
+- `inspect_data.py` — stored-data inspection utility.
+- `quality_check.py` — additional data-quality checks, if included.
 
 ## License
 
-Specify the license applicable to this project before redistributing it.
-t
+No license has been specified yet. Add an appropriate license before permitting others to reuse or redistribute the project.
+
+
 
