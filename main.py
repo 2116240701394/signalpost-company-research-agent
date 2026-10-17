@@ -15,6 +15,7 @@ import json
 import re
 import sqlite3
 import time
+from inspect_data import inspect_database
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -706,3 +707,4 @@ def run_research():
 
 if __name__ == "__main__":
     run_research()
+    inspect_database()
