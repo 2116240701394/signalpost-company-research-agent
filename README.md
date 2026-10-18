@@ -1,121 +1,258 @@
 # Signalpost Company Research Agent
 
+An AI-powered company research agent built with Python, SQLite, the official Brønnøysund Register Centre API, and Ollama. The system collects Norwegian company information, stores company facts, tracks changes over time, and allows users to ask questions about stored company records using natural language.
+
 ## Overview
 
-Signalpost Company Research Agent is a Python application that discovers and refreshes Norwegian company records using the official Brønnøysund Register Centre API. It stores company profiles, structured facts, and historical changes in an SQLite database.
+The Signalpost Company Research Agent is designed to automate company information collection and make stored business data easier to explore.
+
+The system retrieves company records from the official Norwegian business registry, stores the information in a local SQLite database, maintains a history of fact changes, and provides an interactive AI assistant for querying company information.
 
 ## Features
 
-- Discovers Norwegian companies through the official registry API.
-- Retrieves and validates company records.
-- Stores company profiles and structured facts in SQLite.
-- Tracks newly discovered and changed facts in a history log.
-- Refreshes existing records when the agent runs again.
-- Records source information and retrieval timestamps where supported.
+- **Company Data Collection:** Retrieves Norwegian company information from the official Brønnøysund Register Centre API.
+- **Database Storage:** Stores company records and facts in SQLite.
+- **Company Research:** Collects information such as organization number, company name, address, industry, website, and registration details when available.
+- **Fact Change Tracking:** Records changes to stored company facts for historical reference.
+- **Data Refresh:** Refreshes existing records and discovers additional company candidates.
+- **AI-Powered Questions:** Allows users to ask natural-language questions about companies in the database.
+- **Local AI Model:** Uses Ollama with the `qwen2.5:1.5b` model to generate responses.
+- **Interactive CLI:** Provides a command-line interface for asking multiple questions in one session.
+
+## Enhanced AI Feature
+
+The project includes an AI-powered question-answering assistant integrated with **Ollama and the `qwen2.5:1.5b` language model**.
+
+Users can ask questions about companies stored in the local database without writing SQL queries manually.
+
+### Key Capabilities
+
+- **Natural Language Queries:** Ask questions such as "What information do you have about this company?"
+- **SQLite Integration:** Retrieves relevant company records and facts from `companies.db`.
+- **AI-Generated Responses:** Uses Ollama to turn retrieved company information into readable answers.
+- **Local Inference:** Runs the language model locally instead of requiring a paid hosted LLM API.
+- **Interactive Session:** Supports repeated queries until the user types `exit`.
+- **Source Information:** Can include source URLs when they are present in the retrieved company records.
+
+### AI Query Workflow
+
+1. The user enters a company-related question.
+2. The assistant searches the stored company records and facts.
+3. Relevant information is selected from the SQLite database.
+4. The retrieved information is passed to Ollama.
+5. The model generates a natural-language response.
+6. The answer is displayed in the terminal.
+
+### Example
+
+```text
+SIGNALPOST COMPANY RESEARCH ASSISTANT
+
+Ask questions about companies in your database.
+Type 'exit' to quit.
+
+Companies loaded: 1080
+Ollama model: qwen2.5:1.5b
+
+Your question: What information do you have about Equinor?
+
+Searching stored company information...
+
+Answer:
+[AI-generated answer based on retrieved company information]
+```
+
+The number of companies shown depends on the current contents of the local database.
+
+### Accuracy Considerations
+
+The AI assistant depends on the quality of the company records retrieved from the database. A relevant-looking result does not necessarily mean that the correct company has been selected.
+
+Planned improvements include:
+
+- Prioritizing exact company-name matches.
+- Verifying organization numbers against the official registry.
+- Asking the user to choose when multiple companies have similar names.
+- Keeping facts associated with the correct organization number.
+- Reducing unsupported AI-generated claims.
+- Displaying official source URLs for verification.
+
+These improvements should be considered implemented only after the corresponding code has been added and tested.
 
 ## Technology Stack
 
-- **Programming language:** Python
-- **HTTP requests:** Requests
-- **Database:** SQLite
-- **Data source:** Brønnøysund Register Centre API
+| Component | Technology |
+|---|---|
+| Programming language | Python |
+| Database | SQLite |
+| HTTP client | Requests |
+| Company data source | Brønnøysund Register Centre API |
+| Local AI runtime | Ollama |
+| Language model | `qwen2.5:1.5b` |
+| Interface | Command-line interface |
+| Data format | JSON |
 
-Official API documentation: https://data.brreg.no/enhetsregisteret/api/dokumentasjon/
+## Data Source
 
-## Requirements
+The project uses the official Brønnøysund Register Centre API to retrieve Norwegian company information.
 
-- Python 3.10 or a compatible version.
-- Internet access to connect to the registry API.
-- Windows, macOS, or Linux.
+- API documentation: https://data.brreg.no/enhetsregisteret/api/dokumentasjon/
+- Company registry API: https://data.brreg.no/enhetsregisteret/api/enheter
+
+Company details may include organization number, registered name, organization type, business address, industry classification, website, employee count, registration dates, and certain business status fields, depending on availability in the registry.
+
+## Database Structure
+
+The SQLite database stores company information and supports historical tracking.
+
+### `companies`
+
+Stores the main company records, including organization number, company name, source URL, and retrieval timestamp.
+
+### `company_facts`
+
+Stores individual company facts linked to the corresponding organization number, together with their values, source URLs, and retrieval timestamps.
+
+### `company_fact_history`
+
+Maintains a history of fact changes, including the fact name, change type, previous value, new value, source URL, and retrieval timestamp.
+
+The exact columns depend on the database schema used by the current version of the project.
+
+## Project Structure
+
+```text
+signalpost-agent/
+├── main.py              # Company data collection and refresh
+├── ask_company.py       # Interactive AI company research assistant
+├── requirements.txt     # Python dependencies
+├── companies.db         # SQLite database
+├── check_db.py          # Database inspection utility
+├── inspect_data.py      # Stored data inspection utility
+├── quality_check.py     # Optional data quality checks
+└── README.md            # Project documentation
+```
+
+Only include optional files such as `quality_check.py` if they exist in your repository.
 
 ## Installation
 
-Clone or download the repository and open a terminal in the project directory.
+### Prerequisites
 
-Install the required dependencies:
+- Python 3.10 or a compatible Python version.
+- Internet access for retrieving registry data.
+- Ollama installed locally for the AI assistant.
+- Git, if you want to clone the repository.
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/2116240701394/signalpost-company-research-agent.git
+cd signalpost-company-research-agent
+```
+
+### 2. Install Python dependencies
 
 ```bash
 python -m pip install -r requirements.txt
 ```
 
-## Running the Agent
+If you do not have a `requirements.txt` file yet, install Requests directly:
 
-Run the following command:
+```bash
+python -m pip install requests
+```
+
+### 3. Run the company research agent
 
 ```bash
 python main.py
 ```
 
-The agent discovers candidate companies, retrieves available registry records, and stores the results in the SQLite database.
+This runs the company collection and refresh workflow and updates the local database according to the script's configuration.
 
-## Database Inspection
+### 4. Install and configure Ollama
 
-The application stores company records, current facts, and research history in `companies.db`.
+Download Ollama from https://ollama.com/.
 
-To inspect the database, run:
-
-```bash
-python check_db.py
-```
-
-To inspect stored company records, run:
+Pull the language model:
 
 ```bash
-python inspect_data.py
+ollama pull qwen2.5:1.5b
 ```
 
-If `quality_check.py` is included in the repository, run additional data-quality checks with:
+Make sure the Ollama service is running. On Windows, Ollama may already be running in the background; if so, you do not need to start a second server.
+
+You can check available models with:
 
 ```bash
-python quality_check.py
+ollama list
 ```
 
-## Current Test Run
+### 5. Start the AI assistant
 
-The latest reported run produced the following results:
+Ensure that `companies.db` exists and contains company records, then run:
 
-| Metric | Result |
-|---|---:|
-| Companies in database | 1,020 |
-| Current facts stored | 11,050 |
-| History entries | 4,065 |
-| Failed or skipped records | 0 |
+```bash
+python ask_company.py
+```
 
-These figures reflect the reported test run and may change after subsequent updates.
+## Example Questions
 
-## Expected Run Cost
+Try asking questions such as:
 
-The application is designed to run locally without paid software or AI services.
+```text
+What information do you have about Equinor?
+```
 
-| Component | Estimated Cost |
-|---|---:|
-| Public registry API | ₹0 |
-| SQLite database | ₹0 |
-| Python and open-source dependencies | ₹0 |
-| Paid AI/LLM services | ₹0 |
-| Cloud hosting for local execution | ₹0 |
-| **Total estimated software cost per run** | **₹0** |
+```text
+What is the industry and website of this company?
+```
 
-This estimate assumes local execution, use of the public registry API without a paid subscription, and local database storage. Electricity, internet access, computer hardware, and any future paid services are excluded.
+```text
+Find a company using its organization number.
+```
 
-## Data Sources and Limitations
+```text
+What company information is available in the database?
+```
 
-The primary data source is the official Brønnøysund Register Centre API. The available information depends on the records provided by the registry.
+The answers depend on the records available and the retrieval logic implemented in `ask_company.py`.
 
-Retrieving a company record does not guarantee that every possible company fact is available or independently verified. Source links and retrieval timestamps should be checked before relying on individual facts. Financial information should not be treated as independently verified unless the application explicitly implements that verification.
+Type `exit` to close the interactive assistant.
 
-## Project Files
+## Testing and Validation
 
-- `main.py` — Main application entry point.
-- `requirements.txt` — Python dependencies.
-- `companies.db` — SQLite database, if included in the repository.
-- `check_db.py` — Database inspection utility.
-- `inspect_data.py` — Stored-record inspection utility.
-- `quality_check.py` — Additional data-quality checks, if included.
+The project can be checked using the following steps:
 
-## License
+1. Run `main.py` and confirm that registry data is collected or refreshed.
+2. Inspect `companies.db` to confirm that company records and facts are stored.
+3. Run `ask_company.py` and confirm that the assistant loads database records.
+4. Submit a company-related question and check that an answer is generated.
+5. Compare the returned organization number and company details against the official registry.
+6. Test an unknown company name and confirm that the assistant does not invent company records.
 
-No license has been specified yet. Add an appropriate license before permitting others to reuse or redistribute the project.
+A successful AI response alone does not guarantee that the correct company record was retrieved.
 
+## Limitations
+
+- The database contains only the company records collected by the agent.
+- The completeness of the information depends on the source registry and the data collection process.
+- The AI assistant may retrieve an incorrect or incomplete match if company-name matching is ambiguous.
+- A local language model may generate unsupported details if the retrieved context is insufficient.
+- Registry availability and network connectivity can affect data retrieval.
+- Historical records reflect changes observed by the agent; they are not necessarily a complete history of every change in the official registry.
+
+## Future Enhancements
+
+- Improve exact and fuzzy company-name matching.
+- Verify company identity and facts directly against the official registry.
+- Add clarification prompts for ambiguous company names.
+- Introduce stronger source-grounding and answer validation.
+- Add filters for industry, employee count, registration status, and location.
+- Support structured company comparisons and database-wide analytics.
+- Develop a web-based dashboard for company search and research.
+- Add automated testing and data-quality reports.
+- Explore semantic search for more flexible question retrieval
 
 
