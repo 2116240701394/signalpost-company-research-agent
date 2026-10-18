@@ -2,110 +2,116 @@
 
 ## Overview
 
-Signalpost Company Research Agent is a Python application that discovers and refreshes Norwegian company records using the official Brønnøysund Register Centre API. It stores company profiles, current facts, and changes over time in an SQLite database.
+Signalpost Company Research Agent is a Python application that discovers and refreshes Norwegian company records using the official Brønnøysund Register Centre API. It stores company profiles, structured facts, and historical changes in an SQLite database.
 
 ## Features
 
-- Discovers candidate Norwegian companies through the official registry API.
-- Fetches and validates company records.
+- Discovers Norwegian companies through the official registry API.
+- Retrieves and validates company records.
 - Stores company profiles and structured facts in SQLite.
-- Tracks new and changed facts in a history log.
+- Tracks newly discovered and changed facts in a history log.
 - Refreshes existing records when the agent runs again.
-- Records source information and retrieval timestamps where supported by the application.
+- Records source information and retrieval timestamps where supported.
 
 ## Technology Stack
 
-- Python
-- Requests
-- SQLite
-- Brønnøysund Register Centre API
+- **Programming language:** Python
+- **HTTP requests:** Requests
+- **Database:** SQLite
+- **Data source:** Brønnøysund Register Centre API
 
 Official API documentation: https://data.brreg.no/enhetsregisteret/api/dokumentasjon/
 
-
-
-
 ## Requirements
 
-- Python 3.10 or a compatible version supported by the project.
-- Internet access to reach the registry API.
+- Python 3.10 or a compatible version.
+- Internet access to connect to the registry API.
 - Windows, macOS, or Linux.
 
 ## Installation
 
-Clone or download this repository and open a terminal in the project folder.
+Clone or download the repository and open a terminal in the project directory.
 
-Install the dependencies:
+Install the required dependencies:
 
 ```bash
 python -m pip install -r requirements.txt
 ```
 
-## Run the Agent
+## Running the Agent
 
-Execute:
+Run the following command:
 
 ```bash
 python main.py
 ```
 
-The agent discovers candidate companies, retrieves available registry records, and saves the results to the SQLite database.
+The agent discovers candidate companies, retrieves available registry records, and stores the results in the SQLite database.
 
 ## Database Inspection
 
-The application uses `companies.db` to store company records and related research data. The exact tables and fields are defined by the application's database schema.
+The application stores company records, current facts, and research history in `companies.db`.
 
-Inspect the database by running:
+To inspect the database, run:
 
 ```bash
 python check_db.py
 ```
 
-Inspect stored records by running:
+To inspect stored company records, run:
 
 ```bash
 python inspect_data.py
 ```
 
-If `quality_check.py` is included in the repository, run it for additional basic data-quality checks:
+If `quality_check.py` is included in the repository, run additional data-quality checks with:
 
 ```bash
 python quality_check.py
 ```
 
-## Data Sources and Limitations
-
-The primary data source is the official Brønnøysund Register Centre API. Available fields depend on the information provided by the registry. A successfully retrieved record does not guarantee that every possible company fact is available or independently verified.
-
-Source links and retrieval timestamps should be checked before relying on individual facts. The application should not be treated as an independent verification of financial information unless that verification is explicitly implemented.
-
 ## Current Test Run
 
-The latest reported successful run produced these results:
+The latest reported run produced the following results:
 
-- Companies in database: 1,020
-- Current facts stored: 11,050
-- History entries: 4,065
-- Failed or skipped records: 0
+| Metric | Result |
+|---|---:|
+| Companies in database | 1,020 |
+| Current facts stored | 11,050 |
+| History entries | 4,065 |
+| Failed or skipped records | 0 |
 
-These counts describe the reported run and may change after subsequent updates.
+These figures reflect the reported test run and may change after subsequent updates.
+
+## Expected Run Cost
+
+The application is designed to run locally without paid software or AI services.
+
+| Component | Estimated Cost |
+|---|---:|
+| Public registry API | ₹0 |
+| SQLite database | ₹0 |
+| Python and open-source dependencies | ₹0 |
+| Paid AI/LLM services | ₹0 |
+| Cloud hosting for local execution | ₹0 |
+| **Total estimated software cost per run** | **₹0** |
+
+This estimate assumes local execution, use of the public registry API without a paid subscription, and local database storage. Electricity, internet access, computer hardware, and any future paid services are excluded.
+
+## Data Sources and Limitations
+
+The primary data source is the official Brønnøysund Register Centre API. The available information depends on the records provided by the registry.
+
+Retrieving a company record does not guarantee that every possible company fact is available or independently verified. Source links and retrieval timestamps should be checked before relying on individual facts. Financial information should not be treated as independently verified unless the application explicitly implements that verification.
 
 ## Project Files
 
-- `main.py` — main application entry point.
+- `main.py` — Main application entry point.
 - `requirements.txt` — Python dependencies.
-- `companies.db` — SQLite database, if included in the submission.
-- `check_db.py` — database inspection utility.
-- `inspect_data.py` — stored-data inspection utility.
-- `quality_check.py` — additional data-quality checks, if included.
-
-## Runcost: $0
-Signalpost has virtually zero mandatory operating costs. 
-Python and SQLite are free and open-source, while the Brønnøysund Register Centre API provides access to official Norwegian company data without requiring a paid commercial data subscription. 
-The application runs on a standard computer, eliminating the need for cloud hosting, dedicated servers, or GPUs. Since the current technology stack does not use paid AI models, there are no AI inference fees.   By combining free public data, lightweight processing, and local storage, Signalpost delivers cost-effective company research with minimal infrastructure and maintenance expenses. 
-Optional hosting and applicable API usage restrictions may introduce costs at scale
-
-
+- `companies.db` — SQLite database, if included in the repository.
+- `check_db.py` — Database inspection utility.
+- `inspect_data.py` — Stored-record inspection utility.
+- `quality_check.py` — Additional data-quality checks, if included.
 
 ## License
 
