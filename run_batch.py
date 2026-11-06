@@ -527,10 +527,15 @@ def check_website(c, deadline, notes):
     sp = urllib.parse.urlsplit(url)
     alt_host = sp.netloc[4:] if sp.netloc.lower().startswith("www.") else "www." + sp.netloc
     alt = urllib.parse.urlunsplit((sp.scheme, alt_host, sp.path, sp.query, ""))
+    probe_deadline = min(deadline, time.monotonic() + 20)  # a dead site must not eat the whole company allowance
     for u in [url, url.replace("https://", "http://", 1), alt, alt.replace("https://", "http://", 1)]:
+        if time.monotonic() >= probe_deadline - 0.5:
+            break
         try:
-            page, r = get_page(u, deadline)
-        except FetchError:
+            page, r = get_page(u, probe_deadline)
+        except (FetchError, TimeoutError):
+            if time.monotonic() >= deadline - 0.5:
+                raise
             continue
         if page:
             break
