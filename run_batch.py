@@ -597,8 +597,15 @@ def extract_social(page, final):
 NEWS_SEG = re.compile(r"(nyheter|nyhet|news|presse|pressemeldinger|pressemelding|press|aktuelt|blogg|blog|artikler|siste-nytt)", re.I)
 PRODUCT_SEG = re.compile(r"(produkt|produkter|product|products|tjenester|tjeneste|services|service|losninger|solutions|priser|pricing|shop|butikk|kategori|category|tag|tags)", re.I)
 NOT_SLUG = re.compile(r"(page|side|p|archive|arkiv|\d{1,4})", re.I)
+# Menu or button labels that are not news titles. Add a phrase here to reject it (matched as whole words, any case).
+LABEL_PHRASES = [
+    "see more", "see all", "view more", "view all", "read more", "show more", "load more",
+    "more news", "all news", "older posts", "newer posts", "news archive", "go to news", "visit our newsroom",
+    "les mer", "vis mer", "vis flere", "vis alle", "se alle", "se mer", "flere nyheter", "alle nyheter",
+    "eldre nyheter", "nyhetsarkiv", "archive", "arkiv", "next page", "previous page", "neste side", "forrige side",
+]
 LABEL_RE = re.compile(
-    r"\b(see|view|read|show|load)\s+(more|all)\b|\b(les|vis|se)\s+(mer|flere|alle)\b|\bmore news\b|\bflere nyheter\b|\balle nyheter\b|\ball news\b|\barchive\b|\barkiv\b|^\s*(next|previous|neste|forrige)\b",
+    "|".join(r"\b" + re.escape(p) + r"\b" for p in LABEL_PHRASES) + r"|^\s*(next|previous|neste|forrige)\b",
     re.I,
 )
 GENERIC_TITLES = {"news", "nyheter", "blog", "blogg", "press", "presse", "aktuelt", "home", "forside", "pressemeldinger"}
