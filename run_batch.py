@@ -524,7 +524,10 @@ def check_website(c, deadline, notes):
         info["reason"] = "no website in registry"
         return info, None, None
     page, r = None, None
-    for u in [url, url.replace("https://", "http://", 1)]:
+    sp = urllib.parse.urlsplit(url)
+    alt_host = sp.netloc[4:] if sp.netloc.lower().startswith("www.") else "www." + sp.netloc
+    alt = urllib.parse.urlunsplit((sp.scheme, alt_host, sp.path, sp.query, ""))
+    for u in [url, url.replace("https://", "http://", 1), alt, alt.replace("https://", "http://", 1)]:
         try:
             page, r = get_page(u, deadline)
         except FetchError:
