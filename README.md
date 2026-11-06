@@ -124,6 +124,8 @@ The exact columns depend on the database schema used by the current version of t
 ```text
 signalpost-agent/
 ├── main.py              # Company data collection and refresh
+├── run_batch.py         # One-command batch runner: org numbers in, one result per company out
+├── test_batch.py        # Offline tests for the batch runner
 ├── ask_company.py       # Interactive AI company research assistant
 ├── requirements.txt     # Python dependencies
 ├── companies.db         # SQLite database
@@ -220,6 +222,31 @@ What company information is available in the database?
 The answers depend on the records available and the retrieval logic implemented in `ask_company.py`.
 
 Type `exit` to close the interactive assistant.
+
+## Batch run (one command)
+
+```
+python run_batch.py orgnrs.txt results.jsonl --budget 900
+```
+
+- `orgnrs.txt`: one Norwegian organisation number per line (spaces allowed, header line and `#` comments ignored, duplicates dropped).
+- `results.jsonl`: exactly one JSON result per distinct input company, in input order.
+- No API keys and no Ollama needed. Standard library only.
+- `--budget` is the total run budget in seconds (default 600). Companies not reached in time still get a result with `status: "timeout"`; ones cut short get `status: "partial"`.
+- `--workers N` (default 6), `--format json` for a single JSON array, `--no-web` for registry data only.
+- On HTTP 429 or 503 the runner honours `Retry-After`, backs off with jitter, and widens the gap between requests to that host.
+
+Result fields: `orgnr`, `status` (`ok`, `partial`, `timeout`, `not_found`, `deleted`, `invalid_orgnr`, `error`), registry facts (`name`, `org_form`, `address`, `industry`, `employees`, `registered_date`, `bankrupt`, `under_liquidation`), `website`, `social`, `news`, `jobs`, `notes`, `source_url`, `fetched_at`.
+
+## Data quality rules
+
+- **Website must be the company's own.** The registry website is only marked `verified` when the org number appears on the site (homepage, or a contact, about or privacy page), or the exact registered name does. If the site is the parent's website, only the org number counts. Unverified sites are reported with a `reason`, and social links, news and jobs are not collected from them.
+- **News must be real, dated posts.** An item needs a title, an article-style page and an explicit publish date (JSON-LD `datePublished`, `article:published_time`, or a `<time>` tag marked as published). `dateModified`, `og:updated_time` and feed "updated" values are ignored. Labels such as "See more news", index pages and product pages are rejected, and so are future dates.
+- **Jobs must be single ads for this company.** Landing pages, NAV search links (`arbeidsplassen.nav.no/stillinger?q=...`), pages listing several postings, and ads whose hiring organisation is the parent or another company are rejected. An ad needs the company's own name or org number in its JobPosting data or page text.
+
+Tradeoff: these rules favour precision over recall, so a genuine ad that never names the company is dropped.
+
+Run the offline tests with `python -m unittest test_batch`.
 
 ## Testing and Validation
 
