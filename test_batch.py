@@ -111,6 +111,12 @@ class BatchTests(unittest.TestCase):
         self.assertFalse(r["website"]["verified"])
         self.assertEqual((r["social"], r["news"], r["jobs"]), ({}, [], []))
 
+    def test_menu_labels_are_not_news(self):
+        for label in ["See more news", "VIEW ALL", "Read more", "Les mer", "Alle nyheter", "Next page", "News archive", "Load more"]:
+            self.assertTrue(rb.LABEL_RE.search(label), label)
+        for title in ["Alpha vinner ny kunde", "Equinor third quarter 2026 results", "Hydro opens new plant"]:
+            self.assertFalse(rb.LABEL_RE.search(title), title)
+
     def test_budget_exhausted_still_one_result_each(self):
         res = self.run_batch([ALPHA, BRAND], budget=3.2, workers=1)
         self.assertEqual(len(res), 2)
