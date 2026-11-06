@@ -42,7 +42,14 @@ PAGES = {
         <meta property="og:updated_time" content="2025-05-05"></head></html>"""),
     "https://alpha.no/karriere": (200, """<html><body><a href="/karriere/utvikler-123">Utvikler</a><a href="/karriere/annen-1">Annen</a>
         <a href="https://arbeidsplassen.nav.no/stillinger?q=alpha">NAV-søk</a><a href="/karriere?page=2">Neste</a>
-        <a href="https://group.com/careers/job-77">Group job</a></body></html>"""),
+        <a href="https://group.com/careers/job-77">Group job</a>
+        <a href="/karriere/livet-hos-alpha">Livet hos Alpha</a><a href="/karriere/studenter">Studenter</a>
+        <a href="/karriere/selger-55555">Selger</a></body></html>"""),
+    # landing-style subpages: company named in footer, but no JobPosting data and no ad cues -> must be rejected
+    "https://alpha.no/karriere/livet-hos-alpha": (200, """<html><body><h1>Livet hos Alpha</h1><footer>Alpha AS 923 609 016</footer></body></html>"""),
+    "https://alpha.no/karriere/studenter": (200, """<html><body><h1>Students and graduates</h1><p>Apply now to our programme</p><footer>Alpha AS</footer></body></html>"""),
+    # ad without JSON-LD but with id, apply cue and company name -> accepted
+    "https://alpha.no/karriere/selger-55555": (200, """<html><body><h1>Selger</h1><p>Søknadsfrist 1. desember. Alpha AS søker selger.</p></body></html>"""),
     "https://alpha.no/karriere/utvikler-123": (200, """<html><head><script type="application/ld+json">{"@type":"JobPosting","title":"Utvikler","hiringOrganization":{"@type":"Organization","name":"Alpha AS"}}</script></head><body><h1>Utvikler</h1></body></html>"""),
     "https://alpha.no/karriere/annen-1": (200, """<html><head><script type="application/ld+json">{"@type":"JobPosting","title":"Sjef","hiringOrganization":{"name":"Group Holding ASA"}}</script></head><body><h1>Sjef</h1></body></html>"""),
     # brand/group site: no org number, no exact name
@@ -94,7 +101,9 @@ class BatchTests(unittest.TestCase):
         self.assertEqual(r["website"]["evidence"], "orgnr")
         self.assertEqual([n["url"] for n in r["news"]], ["https://alpha.no/nyheter/ny-kunde-2025"])
         self.assertEqual(r["news"][0]["published"], TODAY_OK)  # modified date ignored
-        self.assertEqual([j["url"] for j in r["jobs"]], ["https://alpha.no/karriere/utvikler-123"])  # parent's ad, NAV search, pagination rejected
+        # parent's ad, NAV search, pagination and landing-style subpages are rejected
+        self.assertEqual(sorted(j["url"] for j in r["jobs"]),
+                         ["https://alpha.no/karriere/selger-55555", "https://alpha.no/karriere/utvikler-123"])
         self.assertEqual(r["social"], {"linkedin": "https://www.linkedin.com/company/alpha-as"})
 
     def test_group_site_not_used(self):
