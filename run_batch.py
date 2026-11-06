@@ -682,6 +682,18 @@ NAV_AD = re.compile(r"arbeidsplassen\.nav\.no/stillinger/stilling/[0-9a-f-]{8,}"
 SEARCHY = re.compile(r"(^|&)(q|query|search|sok|s|keyword|keywords|page|filter)=", re.I)
 
 
+AD_ID = re.compile(r"\d{5,}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
+APPLY_CUE = re.compile(r"\b(apply now|apply here|apply for this|application deadline|søknadsfrist|søk på stillingen|send søknad)\b", re.I)
+LANDING_TITLE = re.compile(
+    r"careers?|karriere|life at|graduates?|students?|trainee|internship|apprentice|vacancies|job opportunit|"
+    r"ledige stillinger|meet our|recruitment|rekruttering|why work|working at|jobs at", re.I)
+
+
+def looks_like_single_ad(url, page):
+    path = urllib.parse.urlsplit(url).path
+    return bool(AD_ID.search(path)) and bool(APPLY_CUE.search(page.body)) and not LANDING_TITLE.search(page.h1 or "")
+
+
 def is_ats(url):
     h = urllib.parse.urlsplit(url).hostname or ""
     return any(a in h for a in ATS_HOSTS)
@@ -754,8 +766,10 @@ def find_jobs(c, page, final, base, deadline, notes):
             else:
                 ok = evidence(ap.body, orgnr, own_name) is not None
         else:
+            # Without JobPosting data, only accept a page that clearly is one ad:
+            # an id in the URL, an apply/deadline cue, a non-landing title, and the company named.
             title = ap.h1
-            ok = evidence(ap.body, orgnr, own_name) is not None
+            ok = looks_like_single_ad(u, ap) and evidence(ap.body, orgnr, own_name) is not None
         if ok and parent_name and not evidence(ap.body, orgnr, own_name) and name_in(ap.body, parent_name) and not postings:
             ok = False
         if not ok or not title or str(title).strip().lower() in GENERIC_TITLES:
