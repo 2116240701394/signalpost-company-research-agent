@@ -30,3 +30,8 @@ def get_with_retry(session, url, **kwargs):
               f"waiting {wait:.0f}s (attempt {attempt}/{MAX_RETRIES})")
         time.sleep(wait)
     return response
+        wait = THROTTLE.rejected(response.headers, attempt)
+        print(f"Server asked us to slow down (HTTP {response.status_code}); "
+              f"waiting {wait:.0f}s (attempt {attempt}/{MAX_RETRIES})")
+        time.sleep(wait)
+    return response
