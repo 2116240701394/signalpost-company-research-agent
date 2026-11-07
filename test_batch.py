@@ -142,6 +142,15 @@ class Flaky(BaseHTTPRequestHandler):
 
 
 class RateLimitTest(unittest.TestCase):
+    def test_throttle_rejected_uses_retry_after_then_backoff(self):
+        th = rb.Throttle(0.0)
+        self.assertEqual(th.rejected({"Retry-After": "7"}, 1), 7.0)
+        self.assertEqual(th.rejected({"retry-after": "500"}, 1), 60.0)  # capped
+        w = th.rejected({}, 3)  # no header: 2**3 plus jitter
+        self.assertTrue(8.0 <= w < 9.0)
+        self.assertGreater(th.penalty, 0)  # later requests to this host are spaced out
+        rb.Throttle(0.0).wait()  # works without a deadline (main.py has none)
+
     def test_429_is_retried_with_delay(self):
         srv = HTTPServer(("127.0.0.1", 0), Flaky)
         threading.Thread(target=srv.serve_forever, daemon=True).start()
