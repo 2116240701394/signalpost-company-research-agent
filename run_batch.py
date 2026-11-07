@@ -50,16 +50,25 @@ class Throttle:
         self.min_interval = min_interval
         self.penalty = 0.0
 
-    def wait(self, deadline):
+    def wait(self, deadline=None):
         with self.lock:
             now = time.monotonic()
             start = max(now, self.next_ok)
             self.next_ok = start + self.min_interval + self.penalty
         delay = start - now
         if delay > 0:
-            if time.monotonic() + delay > deadline:
+            if deadline is not None and time.monotonic() + delay > deadline:
                 raise TimeoutError("run budget exhausted")
             time.sleep(delay)
+
+    def rejected(self, headers, attempt):
+        """The server said 'too many requests' (429/503). Returns how many seconds to wait
+        before trying again: its Retry-After if given, else 2, 4, 8... plus jitter.
+        Also widens the gap for every later request to this host."""
+        default = min(2 ** attempt + random.random(), 30)
+        wait_s = _retry_after(headers, default)
+        self.slow_down(wait_s)
+        return wait_s
 
     def slow_down(self, seconds):
         with self.lock:
@@ -137,8 +146,7 @@ def http_get(url, deadline, accept="text/html,application/json;q=0.9,*/*;q=0.5",
         except urllib.error.HTTPError as e:
             hdrs = dict(e.headers or {})
             if e.code == 429 or e.code == 503:
-                wait_s = _retry_after(hdrs, backoff)
-                th.slow_down(wait_s)
+                wait_s = th.rejected(hdrs, attempt)
                 if attempt >= 7:
                     return Resp(e.code, url, "", hdrs)
                 _sleep(wait_s, deadline)
