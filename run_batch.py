@@ -1053,10 +1053,18 @@ def is_child_of(url, landing_urls):
     return False
 
 
+FAQ_PATH = re.compile(r"(^|/)(faq|faqs|frequently-asked-questions|questions|help)(/|$)", re.I)
+FAQ_TITLE = re.compile(r"\b(faqs?|frequently asked questions|your questions answered|questions and answers)\b", re.I)
+
+
 def looks_like_single_ad(url, page, landing_urls=()):
-    """One ad: an id in the URL or a page under the careers page, an apply/deadline cue, and a title that is not a landing title."""
-    anchored = bool(AD_ID.search(urllib.parse.urlsplit(url).path)) or is_child_of(url, landing_urls)
-    return anchored and bool(APPLY_CUE.search(page.body)) and not LANDING_TITLE.search(page.h1 or "")
+    """Accept a specific vacancy page, never a general FAQ or careers landing page."""
+    path = urllib.parse.urlsplit(url).path
+    anchored = bool(AD_ID.search(path)) or is_child_of(url, landing_urls)
+    title = page.h1 or ""
+    if FAQ_PATH.search(path) or FAQ_TITLE.search(title):
+        return False
+    return anchored and bool(APPLY_CUE.search(page.body)) and not LANDING_TITLE.search(title)
 
 
 def ad_deadline(page, posting):
@@ -1079,7 +1087,7 @@ def looks_like_ad(url, landing_urls, base):
     h = norm_host(sp.hostname)
     if h.endswith("nav.no") or h == "finn.no":
         return bool(NAV_AD.search(url)) or (h == "finn.no" and "/job/ad/" in sp.path)
-    if SEARCHY.search(sp.query or ""):
+    if SEARCHY.search(sp.query or "") or FAQ_PATH.search(sp.path):
         return False
     if not (same_site(url, base) or is_ats(url)):
         return False
@@ -1168,7 +1176,8 @@ def find_jobs(c, page, final, base, deadline, notes):
                 ok = looks_like_single_ad(u, ap, landing + ats) and named
             if ok and parent_name and not posting and not evidence(ap.body, orgnr, own_name) and name_in(ap.body, parent_name):
                 ok = False
-            if not ok or not title or str(title).strip().lower() in GENERIC_TITLES:
+            if (not ok or not title or str(title).strip().lower() in GENERIC_TITLES
+                    or FAQ_TITLE.search(str(title)) or FAQ_PATH.search(urllib.parse.urlsplit(u).path)):
                 rejected += 1
                 continue
             until = ad_deadline(ap, posting)
@@ -1239,7 +1248,8 @@ def research(orgnr, raw, prefetched, deadline, opts):
         res["status"] = "not_found"
         notes.append("organisation number not found in Enhetsregisteret")
         return res
-    res["source_url"] = f"{BRREG}/{kind}er/{orgnr}"
+    registry_path = "enheter" if kind == "enhet" else "underenheter"
+    res["source_url"] = f"{BRREG}/{registry_path}/{orgnr}"
     c = registry_fields(j or {}, kind)
     c["orgnr"] = orgnr
     res.update({k: v for k, v in c.items() if k in res})
