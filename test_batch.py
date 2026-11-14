@@ -25,6 +25,9 @@ ALPHA = "923609016"
 BRAND = "914778271"
 PARENT = "981276957"
 GONE = "999999999"
+TREEM = "916208631"   # Treemballasje AS: registry lists a sister company's site
+OTIS1 = "916276389"   # Otis AS: registry lists the parent's global site
+OTIS2 = "916312345"   # Otis AS: registry lists a site that really is Otis AS
 
 PAGES = {
     "https://alpha.no": (200, """<html><title>Alpha</title><body>
@@ -52,6 +55,20 @@ PAGES = {
     "https://alpha.no/karriere/selger-55555": (200, """<html><body><h1>Selger</h1><p>Søknadsfrist 1. desember. Alpha AS søker selger.</p></body></html>"""),
     "https://alpha.no/karriere/utvikler-123": (200, """<html><head><script type="application/ld+json">{"@type":"JobPosting","title":"Utvikler","hiringOrganization":{"@type":"Organization","name":"Alpha AS"}}</script></head><body><h1>Utvikler</h1></body></html>"""),
     "https://alpha.no/karriere/annen-1": (200, """<html><head><script type="application/ld+json">{"@type":"JobPosting","title":"Sjef","hiringOrganization":{"name":"Group Holding ASA"}}</script></head><body><h1>Sjef</h1></body></html>"""),
+    # sister company's site: lists Treemballasje AS in the footer, but the domain is not Treemballasje's
+    "https://rekonstrukt.no": (200, """<html><head><title>Rekonstrukt</title></head><body><h1>Rekonstrukt</h1>
+        <a href="https://www.linkedin.com/company/rekonstrukt">in</a><a href="/nyheter/ny-sak-2025">Ny sak</a>
+        <footer>© 2026 Rekonstrukt AS. Våre selskaper: Treemballasje AS, Emineo Gruppen</footer></body></html>"""),
+    # parent's global site: brand word "Otis" everywhere, but never the full name "Otis AS"
+    "https://otis.com": (200, """<html><head><title>Otis</title></head><body><h1>Otis</h1>
+        <a href="https://www.youtube.com/user/OtisElevatorCompany">YouTube</a>
+        <footer>© 2026 Otis Worldwide Corporation</footer></body></html>"""),
+    # the real Otis AS site: full name in the footer, matching domain, but links to global social accounts
+    "https://otis.no": (200, """<html><head><title>Otis Norge</title></head><body><h1>Otis</h1>
+        <a href="https://www.youtube.com/user/OtisElevatorCompany">YouTube</a>
+        <a href="https://www.linkedin.com/company/otis">Otis global</a>
+        <a href="https://www.linkedin.com/company/otis-norge">Otis Norge</a>
+        <footer>© 2026 Otis AS</footer></body></html>"""),
     # brand/group site: no org number, no exact name
     "https://group.com": (200, """<html><title>Group Holding</title><body><a href="/news">News</a><a href="/careers">Careers</a>
         <a href="https://linkedin.com/company/group">in</a><p>Welcome to Group Holding</p></body></html>"""),
@@ -63,7 +80,10 @@ def fake_fetch(url, deadline, accept="", max_bytes=0):
     if "organisasjonsnummer=" in url:
         return rb.Resp(200, url, json.dumps({"_embedded": {"enheter": [
             enhet(ALPHA, "Alpha AS", "www.alpha.no"),
-            enhet(BRAND, "Brand Norge AS", "group.com", parent=PARENT)]}}), {})
+            enhet(BRAND, "Brand Norge AS", "group.com", parent=PARENT),
+            enhet(TREEM, "TREEMBALLASJE AS", "rekonstrukt.no"),
+            enhet(OTIS1, "OTIS AS", "otis.com"),
+            enhet(OTIS2, "OTIS AS", "www.otis.no")]}}), {})
     if url.endswith("/enheter/" + PARENT):
         return rb.Resp(200, url, json.dumps(enhet(PARENT, "Group Holding ASA", "group.com")), {})
     if url.endswith("/enheter/" + GONE) or url.endswith("/underenheter/" + GONE):
@@ -110,6 +130,32 @@ class BatchTests(unittest.TestCase):
         r = self.run_batch([BRAND], budget=60)[0]
         self.assertFalse(r["website"]["verified"])
         self.assertEqual((r["social"], r["news"], r["jobs"]), ({}, [], []))
+
+    def test_claims_about_another_company_are_left_out(self):
+        treem, otis_global, otis_no = self.run_batch([TREEM, OTIS1, OTIS2], budget=60)
+        # sister company's site: name only listed in a group footer, domain is not Treemballasje's
+        self.assertFalse(treem["website"]["verified"])
+        self.assertEqual((treem["social"], treem["news"], treem["jobs"]), ({}, [], []))
+        # parent's global site: no "Otis AS" anywhere, so nothing is collected, not even its YouTube channel
+        self.assertFalse(otis_global["website"]["verified"])
+        self.assertEqual(otis_global["social"], {})
+        # the real Otis AS site is accepted by name, but the global parent's handles are not
+        self.assertTrue(otis_no["website"]["verified"])
+        self.assertEqual(otis_no["website"]["evidence"], "name")
+        self.assertEqual(otis_no["social"], {"linkedin": "https://www.linkedin.com/company/otis-norge"})
+
+    def test_same_company_and_social_ties(self):
+        self.assertTrue(rb.same_company("Otis Norge AS", "OTIS AS"))
+        self.assertTrue(rb.same_company("Alpha AS", "ALPHA AS"))
+        self.assertFalse(rb.same_company("Otis Elevator Company", "OTIS AS"))
+        self.assertFalse(rb.same_company("Equinor Energy AS", "EQUINOR ASA"))
+        c = {"name": "OTIS AS", "orgnr": OTIS2}
+        tie = rb.social_ties_to_company
+        self.assertFalse(tie("https://www.youtube.com/user/OtisElevatorCompany", c, "orgnr"))
+        self.assertFalse(tie("https://www.linkedin.com/company/otis", c, "name"))   # bare brand, weak site proof
+        self.assertTrue(tie("https://www.linkedin.com/company/otis", c, "orgnr"))   # bare brand, org number on site
+        self.assertTrue(tie("https://www.linkedin.com/company/otis-norge", c, "name"))
+        self.assertTrue(tie("https://www.facebook.com/otisas", c, "name"))
 
     def test_menu_labels_are_not_news(self):
         for label in ["See more news", "VIEW ALL", "Read more", "Les mer", "Alle nyheter", "Next page", "News archive", "Load more"]:
