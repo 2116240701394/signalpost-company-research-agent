@@ -1,0 +1,52 @@
+{
+  "total_companies": 3,
+  "successful_companies": 3,
+  "failed_companies": 0,
+  "companies": [
+    {
+      "orgnr": "983381359",
+      "name": "2 YOU REKLAMEBYRÅ DA",
+      "status": "ok",
+      "website_verified": false,
+      "news_count": 0,
+      "jobs_count": 0,
+      "notes": [
+        "No website registered in the company registry",
+        "No verified news or job postings found"
+      ]
+    },
+    {
+      "orgnr": "923609016",
+      "name": "EQUINOR ASA",
+      "status": "ok",
+      "website_verified": true,
+      "news_count": 4,
+      "jobs_count": 0,
+      "notes": [
+        "Four dated news articles successfully retrieved",
+        "The careers FAQ page was incorrectly detected as a job posting",
+        "The FAQ page should be excluded from job results"
+      ]
+    },
+    {
+      "orgnr": "974761076",
+      "name": "SKATTEETATEN",
+      "status": "ok",
+      "website_verified": true,
+      "news_count": 5,
+      "jobs_count": 0,
+      "notes": [
+        "Five dated news articles successfully retrieved",
+        "No verifiable open job postings found"
+      ]
+    }
+  ],
+  "summary": {
+    "total_news_articles": 9,
+    "total_verified_job_postings": 0,
+    "registry_processing": "successful",
+    "news_extraction": "successful",
+    "job_detection": "needs_improvement",
+    "next_action": "Exclude FAQ and general careers pages from job postings"
+  }
+}
