@@ -28,6 +28,20 @@ GONE = "999999999"
 TREEM = "916208631"   # Treemballasje AS: registry lists a sister company's site
 OTIS1 = "916276389"   # Otis AS: registry lists the parent's global site
 OTIS2 = "916312345"   # Otis AS: registry lists a site that really is Otis AS
+DELTA = "917000001"   # news from crawl, dated cards, text dates, RSS and Atom; jobs from a careers page
+WPCO = "917000002"    # news from the WordPress post list; careers page found by probing /karriere
+
+RSS = """<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>Delta</title>
+<item><title>Delta lanserer ny tjeneste</title><link>https://delta.no/2025/10/ny-tjeneste</link><pubDate>Tue, 28 Oct 2025 09:00:00 +0100</pubDate></item>
+<item><title>Nyhet fra annet selskap</title><link>https://other.com/x</link><pubDate>Tue, 28 Oct 2025 09:00:00 +0100</pubDate></item>
+</channel></rss>"""
+ATOM = """<feed xmlns="http://www.w3.org/2005/Atom">
+<entry><title>Atom sak publisert</title><link rel="alternate" href="https://delta.no/2025/09/atom-sak"/><published>2025-09-15T08:00:00Z</published><updated>2025-12-01T08:00:00Z</updated></entry>
+<entry><title>Kun oppdatert dato</title><link href="https://delta.no/2025/09/kun-oppdatert"/><updated>2025-10-01T08:00:00Z</updated></entry></feed>"""
+WP_JSON = {"wpco.no": json.dumps([
+    {"date": "2025-10-30T10:00:00", "link": "https://wpco.no/slik-gjor-vi-det/", "title": {"rendered": "Slik gj&oslash;r vi det"}, "type": "post"},
+    {"date": "2025-10-01T10:00:00", "link": "https://elsewhere.com/x", "title": {"rendered": "Feil domene"}, "type": "post"},
+    {"date": "2099-01-01T10:00:00", "link": "https://wpco.no/fremtid/", "title": {"rendered": "Fremtidig"}, "type": "post"}])}
 
 PAGES = {
     "https://alpha.no": (200, """<html><title>Alpha</title><body>
@@ -69,6 +83,35 @@ PAGES = {
         <a href="https://www.linkedin.com/company/otis">Otis global</a>
         <a href="https://www.linkedin.com/company/otis-norge">Otis Norge</a>
         <footer>© 2026 Otis AS</footer></body></html>"""),
+    # --- DELTA: news (crawl, dated card, text date, feeds) and jobs (careers page) ---
+    "https://delta.no": (200, """<html><head><title>Delta</title>
+        <link rel="alternate" type="application/rss+xml" href="/feed.xml"><link rel="alternate" type="application/atom+xml" href="/atom.xml">
+        </head><body><a href="/nyheter">Nyheter</a><a href="/karriere">Karriere</a>
+        <a href="/nyheter/tekstdato">Tekstdato</a><a href="/nyheter/uten-dato2">Uten dato</a>
+        <footer>Delta AS org.nr 917 000 001</footer></body></html>"""),
+    "https://delta.no/feed.xml": (200, RSS),
+    "https://delta.no/atom.xml": (200, ATOM),
+    "https://delta.no/nyheter": (200, """<html><body><ul>
+        <li><time datetime="2025-10-20">20. oktober 2025</time><a href="/en-sak">En sak fra kortet</a></li>
+        <li><a href="/ny-butikk">Ny butikk uten dato</a></li></ul></body></html>"""),
+    "https://delta.no/en-sak": (200, """<html><head><title>En sak fra kortet</title></head><body><h1>En sak fra kortet</h1></body></html>"""),
+    "https://delta.no/nyheter/tekstdato": (200, """<html><head><title>Tekstdato sak</title></head><body><h1>Sak med tekstdato</h1>
+        <p>Publisert: 3. november 2025</p><p>Oppdatert: 5. november 2025</p></body></html>"""),
+    "https://delta.no/nyheter/uten-dato2": (200, """<html><head><title>Uten dato sak</title></head><body><h1>Sak uten dato</h1></body></html>"""),
+    "https://delta.no/karriere": (200, """<html><body><h1>Karriere</h1>
+        <a href="/karriere/lagerarbeider">Lagerarbeider</a><a href="/karriere/utgatt-stilling">Utgatt</a>
+        <a href="/karriere/gammel-stilling">Gammel</a><a href="/karriere/livet-hos-delta">Livet hos Delta</a></body></html>"""),
+    "https://delta.no/karriere/lagerarbeider": (200, """<html><body><h1>Lagerarbeider</h1>
+        <p>Delta AS søker lagerarbeider. Søknadsfrist: 1. desember 2099.</p></body></html>"""),
+    "https://delta.no/karriere/utgatt-stilling": (200, """<html><head><script type="application/ld+json">{"@type":"JobPosting","title":"Tidligere stilling",
+        "validThrough":"2025-01-01","hiringOrganization":{"name":"Delta AS"}}</script></head><body><h1>Tidligere stilling</h1></body></html>"""),
+    "https://delta.no/karriere/gammel-stilling": (200, """<html><body><h1>Selger</h1><p>Delta AS søker selger. Søknadsfrist: 5. januar 2025.</p></body></html>"""),
+    "https://delta.no/karriere/livet-hos-delta": (200, """<html><body><h1>Livet hos Delta</h1><footer>Delta AS 917 000 001</footer></body></html>"""),
+    # --- WPCO: WordPress post list; careers page only reachable by probing /karriere ---
+    "https://wpco.no": (200, """<html><head><title>WP Eksempel</title><link rel='https://api.w.org/' href='https://wpco.no/wp-json/'></head>
+        <body><footer>Wordpress Eksempel AS org.nr 917 000 002</footer></body></html>"""),
+    "https://wpco.no/karriere": (200, """<html><body><h1>Jobb hos oss</h1><a href="/karriere/kokk-1">Kokk</a></body></html>"""),
+    "https://wpco.no/karriere/kokk-1": (200, """<html><body><h1>Kokk</h1><p>Vi søker kokk til Wordpress Eksempel AS. Send søknad innen fristen.</p></body></html>"""),
     # brand/group site: no org number, no exact name
     "https://group.com": (200, """<html><title>Group Holding</title><body><a href="/news">News</a><a href="/careers">Careers</a>
         <a href="https://linkedin.com/company/group">in</a><p>Welcome to Group Holding</p></body></html>"""),
@@ -83,7 +126,12 @@ def fake_fetch(url, deadline, accept="", max_bytes=0):
             enhet(BRAND, "Brand Norge AS", "group.com", parent=PARENT),
             enhet(TREEM, "TREEMBALLASJE AS", "rekonstrukt.no"),
             enhet(OTIS1, "OTIS AS", "otis.com"),
-            enhet(OTIS2, "OTIS AS", "www.otis.no")]}}), {})
+            enhet(OTIS2, "OTIS AS", "www.otis.no"),
+            enhet(DELTA, "DELTA AS", "delta.no"),
+            enhet(WPCO, "WORDPRESS EKSEMPEL AS", "wpco.no")]}}), {})
+    if "/wp-json/wp/v2/posts" in url:
+        body = WP_JSON.get(rb.host_of(url))
+        return rb.Resp(200 if body else 404, url, body or "", {})
     if url.endswith("/enheter/" + PARENT):
         return rb.Resp(200, url, json.dumps(enhet(PARENT, "Group Holding ASA", "group.com")), {})
     if url.endswith("/enheter/" + GONE) or url.endswith("/underenheter/" + GONE):
@@ -143,6 +191,45 @@ class BatchTests(unittest.TestCase):
         self.assertTrue(otis_no["website"]["verified"])
         self.assertEqual(otis_no["website"]["evidence"], "name")
         self.assertEqual(otis_no["social"], {"linkedin": "https://www.linkedin.com/company/otis-norge"})
+
+    def test_news_from_crawl_cards_text_dates_and_feeds(self):
+        r = self.run_batch([DELTA], budget=60)[0]
+        got = [(n["published"], n["date_source"], n["url"]) for n in r["news"]]
+        self.assertEqual(got, [
+            ("2025-11-03", "text", "https://delta.no/nyheter/tekstdato"),        # 'Publisert', not 'Oppdatert'
+            ("2025-10-28", "feed", "https://delta.no/2025/10/ny-tjeneste"),      # RSS pubDate
+            ("2025-10-20", "listing", "https://delta.no/en-sak"),                # dated teaser card
+            ("2025-09-15", "feed", "https://delta.no/2025/09/atom-sak"),         # Atom <published>, not <updated>
+        ])
+        for n in r["news"]:
+            self.assertTrue(n["linked_from"].startswith("https://delta.no"))      # linked from the company's own site
+        urls = " ".join(n["url"] for n in r["news"])
+        for bad in ("other.com", "kun-oppdatert", "uten-dato2", "ny-butikk"):
+            self.assertNotIn(bad, urls)
+
+    def test_news_from_wordpress_post_list(self):
+        r = self.run_batch([WPCO], budget=60)[0]
+        self.assertEqual([(n["title"], n["published"], n["date_source"]) for n in r["news"]],
+                         [("Slik gjør vi det", "2025-10-30", "wp_rest")])  # other domain and future date dropped
+
+    def test_open_job_ads_only_and_linked_from_careers_page(self):
+        r = self.run_batch([DELTA], budget=60)[0]
+        self.assertEqual([(j["url"], j["linked_from"]) for j in r["jobs"]],
+                         [("https://delta.no/karriere/lagerarbeider", "https://delta.no/karriere")])
+        self.assertEqual(r["jobs"][0]["valid_through"], "2099-12-01")
+        self.assertTrue(any("expired" in n for n in r["notes"]))  # JSON-LD validThrough and text deadline both in the past
+
+    def test_careers_page_found_by_probing_usual_addresses(self):
+        r = self.run_batch([WPCO], budget=60)[0]
+        self.assertEqual([j["url"] for j in r["jobs"]], ["https://wpco.no/karriere/kokk-1"])
+
+    def test_date_parsing(self):
+        self.assertEqual(rb.parse_date("3. november 2025"), "2025-11-03")
+        self.assertEqual(rb.parse_date("October 29, 2025"), "2025-10-29")
+        self.assertEqual(rb.parse_date("29.10.2025"), "2025-10-29")
+        self.assertIsNone(rb.parse_date("1. januar 2999"))          # future is not a publish date
+        self.assertEqual(rb.published_from_text("Oppdatert: 5. november 2025"), None)
+        self.assertEqual(rb.published_from_text("Publisert 3. november 2025 kl 09:00"), "2025-11-03")
 
     def test_same_company_and_social_ties(self):
         self.assertTrue(rb.same_company("Otis Norge AS", "OTIS AS"))
