@@ -681,19 +681,22 @@ def check_website(c, deadline, notes):
     alt_host = sp.netloc[4:] if sp.netloc.lower().startswith("www.") else "www." + sp.netloc
     alt = urllib.parse.urlunsplit((sp.scheme, alt_host, sp.path, sp.query, ""))
     probe_deadline = min(deadline, time.monotonic() + 20)  # a dead site must not eat the whole company allowance
+    last_status = None
     for u in [url, url.replace("https://", "http://", 1), alt, alt.replace("https://", "http://", 1)]:
         if time.monotonic() >= probe_deadline - 0.5:
             break
         try:
             page, r = get_page(u, probe_deadline)
         except (FetchError, TimeoutError):
+            last_status = "connection error"
             if time.monotonic() >= deadline - 0.5:
                 raise
             continue
+        last_status = f"HTTP {r.status}"
         if page:
             break
     if not page:
-        info["reason"] = "website not reachable"
+        info["reason"] = "website not reachable" + (f" ({last_status})" if last_status else "")
         return info, None, None
     final = r.url
     base = host_of(final)
