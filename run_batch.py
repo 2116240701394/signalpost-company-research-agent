@@ -21,6 +21,7 @@ import re
 import sys
 import threading
 import time
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -185,6 +186,8 @@ class PageParser(HTMLParser):
         self._title = False
         self._h1 = False
         self._skip = 0
+        self.footer = []
+        self._footer = 0
         self._a = None
         self._ld = False
         self._ldbuf = []
@@ -211,6 +214,8 @@ class PageParser(HTMLParser):
             self.times.append(
                 {"datetime": a["datetime"], "itemprop": a.get("itemprop", "").lower(), "class": a.get("class", "").lower()}
             )
+        elif tag == "footer":
+            self._footer += 1
         elif tag == "h1" and not self.h1:
             self._h1 = True
 
@@ -228,6 +233,8 @@ class PageParser(HTMLParser):
                 self._skip -= 1
         elif tag == "style" and self._skip:
             self._skip -= 1
+        elif tag == "footer" and self._footer:
+            self._footer -= 1
         elif tag == "h1":
             self._h1 = False
 
@@ -237,6 +244,8 @@ class PageParser(HTMLParser):
             return
         if self._skip:
             return
+        if self._footer:
+            self.footer.append(data)
         if self._title:
             self.title += data
         if self._h1:
@@ -256,6 +265,7 @@ def parse_page(html):
     p.h1 = " ".join(p.h1.split())
     p.title = " ".join(p.title.split())
     p.body = " ".join(" ".join(p.text).split())
+    p.footer_text = " ".join(" ".join(p.footer).split())
     return p
 
 
@@ -342,10 +352,65 @@ def orgnr_in(text, orgnr):
     return re.search(pat, text or "") is not None
 
 
+def ascii_fold(s):
+    s = (s or "").lower().replace("æ", "ae").replace("ø", "o").replace("å", "a")
+    return "".join(ch for ch in unicodedata.normalize("NFKD", s) if not unicodedata.combining(ch))
+
+
+LOCAL_WORDS = {"norge", "norway", "no"}
+GENERIC_TOKENS = LEGAL | LOCAL_WORDS | {
+    "norsk", "group", "gruppen", "holding", "holdings", "invest", "eiendom", "international", "nordic",
+    "services", "service", "solutions", "consulting", "trading", "the", "and", "og", "for", "den", "det",
+}
+
+
+def name_stem(name):
+    toks = norm_text(name).split()
+    while toks and toks[-1] in LEGAL:
+        toks.pop()
+    return " ".join(toks)
+
+
+def company_key(name):
+    """Name without legal suffix or a trailing country word, as one lowercase ASCII string:
+    'Otis Norge AS' -> 'otis'. Two names are the same company only if their keys are equal."""
+    toks = name_stem(name).split()
+    while toks and toks[-1] in LOCAL_WORDS:
+        toks.pop()
+    return "".join(ascii_fold(t) for t in toks)
+
+
+def same_company(a, b):
+    ka, kb = company_key(a), company_key(b)
+    return bool(ka) and ka == kb
+
+
+def full_name_in(text, name):
+    """The complete registered name, legal suffix included ('Otis AS'), as a whole phrase.
+    A brand word alone ('Otis') does not count: parents and sister companies share it."""
+    full = norm_text(name)
+    return bool(full) and re.search(r"(?<!\w)" + re.escape(full) + r"(?!\w)", norm_text(text)) is not None
+
+
+def brand_in_domain(host, name):
+    dom = re.sub(r"[^a-z0-9]", "", ascii_fold(host))
+    toks = [ascii_fold(t) for t in name_stem(name).split()]
+    toks = [t for t in toks if len(t) >= 3 and t not in GENERIC_TOKENS]
+    return any(t in dom for t in toks)
+
+
+def identity_text(page):
+    """Where a site says who it belongs to: title, site name, main heading, footer and copyright lines.
+    A name that only appears in body text (a list of group companies, a news item) is not identity."""
+    parts = [page.title, page.meta.get("og:site_name", ""), page.h1, getattr(page, "footer_text", "")]
+    parts += re.findall(r"(?:©|&copy;|\(c\)|copyright)[^\n]{0,100}", page.body, re.I)
+    return " ".join(parts)
+
+
 def evidence(text, orgnr, name):
     if orgnr_in(text, orgnr):
         return "orgnr"
-    if name and name_in(text, name):
+    if name and full_name_in(text, name):
         return "name"
     return None
 
@@ -558,29 +623,32 @@ def check_website(c, deadline, notes):
     parent_host = c.get("_parent_host")
     group_site = bool(parent_host and parent_host == base)
 
-    texts = [page.body + " " + page.title]
-    ev = evidence(texts[0], orgnr, name)
-    if ev != "orgnr":
+    # Strongest proof: this company's own organisation number on the site (home, contact, about, privacy).
+    ev = "orgnr" if orgnr_in(page.body + " " + page.title, orgnr) else None
+    if not ev:
         extra = [u for u, t in abs_links(page, final) if same_site(u, base) and (SUPPORT_PATH.search(urllib.parse.urlsplit(u).path) or SUPPORT_PATH.search(t))]
         for u in extra[:3]:
             try:
                 p2, _ = get_page(u, deadline)
             except FetchError:
                 continue
-            if p2:
-                ev2 = evidence(p2.body, orgnr, name)
-                if ev2 == "orgnr" or (ev2 and not ev):
-                    ev = ev2
-                if ev == "orgnr":
-                    break
-    if group_site and ev != "orgnr":
-        info["reason"] = "site belongs to parent group and does not show this company's org number"
-        return info, page, final
+            if p2 and orgnr_in(p2.body, orgnr):
+                ev = "orgnr"
+                break
+    # Weaker proof, only for a site that is not the parent's: the full registered name (with AS/ASA) is
+    # the site's own identity (title, footer, copyright) AND the domain contains the company's brand word.
+    # A group site that merely lists this company, or a parent's global site, fails one of the two.
+    if not ev and not group_site and full_name_in(identity_text(page), name) and brand_in_domain(base, name):
+        ev = "name"
     if ev:
         info["verified"] = True
         info["evidence"] = ev
         return info, page, final
-    info["reason"] = "org number and exact name not found on site (possible group or brand site)"
+    if group_site:
+        info["reason"] = "site belongs to parent group and does not show this company's org number"
+    else:
+        info["reason"] = ("org number not found, and the full registered name is not shown as the owner of a "
+                          "domain matching it (possible group, parent or sister-company site)")
     return info, page, final
 
 
@@ -593,12 +661,46 @@ SOCIAL = [
 ]
 
 
-def extract_social(page, final):
-    out = {}
+def social_slug(url):
+    parts = [s for s in urllib.parse.urlsplit(url).path.split("/") if s]
+    while parts and parts[0].lower() in ("company", "school", "channel", "user", "c", "in", "pages"):
+        parts.pop(0)
+    return parts[0].lstrip("@") if parts else ""
+
+
+def social_ties_to_company(url, c, site_evidence):
+    """A profile found on the company's own site is kept only if its handle names this company.
+    'OtisElevatorCompany' is the global parent of Otis AS, so it fails; 'otis-norge' passes.
+    A bare brand handle ('equinor') is kept only when the site itself showed the org number,
+    because a bare brand handle is often the parent's or the global account."""
+    core = re.sub(r"[^a-z0-9]", "", ascii_fold(urllib.parse.unquote(social_slug(url))))
+    stem = company_key(c["name"])
+    if not core or not stem:
+        return False
+    if c["orgnr"] in core:
+        return True
+    if core == stem:
+        return site_evidence == "orgnr"
+    stripped = core
+    for _ in range(3):
+        for w in ("asa", "as", "norge", "norway", "no"):
+            if stripped.endswith(w) and len(stripped) > len(w):
+                stripped = stripped[: -len(w)]
+                break
+    return stripped == stem and stripped != core
+
+
+def extract_social(page, final, c, site_evidence, notes=None):
+    out, dropped = {}, set()
     for u, _ in abs_links(page, final):
         for k, pat in SOCIAL:
-            if k not in out and re.search(pat, u, re.I) and "share" not in u.lower():
-                out[k] = u
+            if re.search(pat, u, re.I) and "share" not in u.lower():
+                if social_ties_to_company(u, c, site_evidence):
+                    out.setdefault(k, u)
+                else:
+                    dropped.add(u)
+    if dropped and notes is not None:
+        notes.append(f"social: left out {len(dropped)} link(s) that cannot be tied to this company's name or org number")
     return out
 
 
@@ -785,7 +887,7 @@ def find_jobs(c, page, final, base, deadline, notes):
             org = n.get("hiringOrganization")
             org_name = org.get("name") if isinstance(org, dict) else org
             if isinstance(org_name, str) and org_name.strip():
-                ok = name_in(org_name, own_name) or name_in(own_name, org_name) or orgnr_in(json.dumps(org) if isinstance(org, dict) else "", orgnr)
+                ok = same_company(org_name, own_name) or orgnr_in(json.dumps(org) if isinstance(org, dict) else "", orgnr)
             else:
                 ok = evidence(ap.body, orgnr, own_name) is not None
         else:
@@ -876,7 +978,7 @@ def research(orgnr, raw, prefetched, deadline, opts):
         res["website"].update(info)
         if info["verified"] and page:
             base = host_of(final)
-            res["social"] = extract_social(page, final)
+            res["social"] = extract_social(page, final, c, info["evidence"], notes)
             res["news"] = find_news(page, final, base, deadline, notes)
             res["jobs"] = find_jobs(c, page, final, base, deadline, notes)
         elif info["url"]:
