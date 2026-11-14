@@ -240,14 +240,14 @@ Result fields: `orgnr`, `status` (`ok`, `partial`, `timeout`, `not_found`, `dele
 
 ## Data quality rules
 
-- **Website must be the company's own.** The registry website is only marked `verified` when the org number appears on the site (homepage, or a contact, about or privacy page), or the exact registered name does. If the site is the parent's website, only the org number counts. Unverified sites are reported with a `reason`, and social links, news and jobs are not collected from them.
+- **Website must be the company's own.** The registry website is marked `verified` only when this company's organisation number appears on the site (homepage, or a contact, about or privacy page). Without the number, the full registered name including AS/ASA must be the site's own identity (title, site name, main heading, footer or copyright line) and the domain must contain the company's brand word. A brand word alone does not count, and neither does a name that is only listed in body text, so a parent's global site or a sister company's group site is rejected. Unverified sites are reported with a `reason`, and no social links, news or jobs are collected from them.
+- **Social links must name this company.** A profile on a verified site is kept only if its handle names the company (for example `otis-norge`), not a parent's (`OtisElevatorCompany`). A bare brand handle (`otis`) is kept only when the site showed the organisation number. Anything that cannot be tied to the company's name or org number is left out.
 - **News must be real, dated posts.** An item needs a title, an article-style page and an explicit publish date (JSON-LD `datePublished`, `article:published_time`, or a `<time>` tag marked as published). `dateModified`, `og:updated_time` and feed "updated" values are ignored. Labels such as "See more news", index pages and product pages are rejected, and so are future dates.
-- **Jobs must be single ads for this company.** Landing pages, NAV search links (`arbeidsplassen.nav.no/stillinger?q=...`), pages listing several postings, and ads whose hiring organisation is the parent or another company are rejected. An ad needs the company's own name or org number in its JobPosting data or page text.
+- **Jobs must be single ads for this company.** Landing pages, NAV search links (`arbeidsplassen.nav.no/stillinger?q=...`), pages listing several postings, and ads whose hiring organisation is not the same company (after dropping AS/ASA and a country word such as Norge) are rejected.
 
-Tradeoff: these rules favour precision over recall, so a genuine ad that never names the company is dropped.
+Tradeoff: these rules favour precision over recall. A genuine site, profile or ad that cannot be tied to the company's name or org number is left out.
 
 Run the offline tests with `python -m unittest test_batch`.
-
 ## Testing and Validation
 
 The project can be checked using the following steps:
