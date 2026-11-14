@@ -14,6 +14,7 @@ One command: a file of Norwegian organisation numbers in, one result per company
 import argparse
 import datetime as dt
 import email.utils
+import html
 import json
 import os
 import random
@@ -25,6 +26,7 @@ import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
+import xml.etree.ElementTree as ET
 from collections import namedtuple
 from concurrent.futures import ThreadPoolExecutor, wait
 from html.parser import HTMLParser
@@ -188,6 +190,9 @@ class PageParser(HTMLParser):
         self._skip = 0
         self.footer = []
         self._footer = 0
+        self.link_tags = []  # (rel, type, href) from <link> in the head: feeds, WordPress API
+        self.cards = []      # <article>/<li> blocks holding both a link and a <time datetime>
+        self._cards = []
         self._a = None
         self._ld = False
         self._ldbuf = []
@@ -211,9 +216,14 @@ class PageParser(HTMLParser):
         elif tag == "style":
             self._skip += 1
         elif tag == "time" and a.get("datetime"):
-            self.times.append(
-                {"datetime": a["datetime"], "itemprop": a.get("itemprop", "").lower(), "class": a.get("class", "").lower()}
-            )
+            t = {"datetime": a["datetime"], "itemprop": a.get("itemprop", "").lower(), "class": a.get("class", "").lower()}
+            self.times.append(t)
+            if self._cards:
+                self._cards[-1]["times"].append(t)
+        elif tag == "link":
+            self.link_tags.append((a.get("rel", "").lower(), a.get("type", "").lower(), a.get("href", "")))
+        elif tag in ("article", "li"):
+            self._cards.append({"links": [], "times": []})
         elif tag == "footer":
             self._footer += 1
         elif tag == "h1" and not self.h1:
@@ -224,7 +234,13 @@ class PageParser(HTMLParser):
             self._title = False
         elif tag == "a" and self._a is not None:
             self.links.append((self._a["href"], " ".join("".join(self._a["text"]).split())))
+            if self._cards:
+                self._cards[-1]["links"].append(self._a["href"])
             self._a = None
+        elif tag in ("article", "li") and self._cards:
+            card = self._cards.pop()
+            if card["links"] and card["times"]:
+                self.cards.append(card)
         elif tag == "script":
             if self._ld:
                 self.jsonld.append("".join(self._ldbuf))
@@ -418,23 +434,58 @@ def evidence(text, orgnr, name):
 # --------------------------------------------------------------------------
 # Dates
 # --------------------------------------------------------------------------
-def parse_date(s):
-    if not s or not isinstance(s, str):
-        return None
-    m = re.match(r"\s*(\d{4})-(\d{2})-(\d{2})", s)
+MONTHS = {
+    "januar": 1, "jan": 1, "january": 1, "februar": 2, "feb": 2, "february": 2, "mars": 3, "mar": 3, "march": 3,
+    "april": 4, "apr": 4, "mai": 5, "may": 5, "juni": 6, "jun": 6, "june": 6, "juli": 7, "jul": 7, "july": 7,
+    "august": 8, "aug": 8, "september": 9, "sep": 9, "sept": 9, "oktober": 10, "okt": 10, "october": 10, "oct": 10,
+    "november": 11, "nov": 11, "desember": 12, "des": 12, "december": 12, "dec": 12,
+}
+DATE_TEXT = (r"\d{4}-\d{2}-\d{2}|\d{1,2}\.\d{1,2}\.\d{4}|\d{1,2}\.?\s+[A-Za-zæøåÆØÅ]+\.?,?\s+\d{4}"
+             r"|[A-Za-zæøåÆØÅ]+\.?\s+\d{1,2},?\s+\d{4}")
+
+
+def _date(y, m, d):
     try:
-        if m:
-            d = dt.date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
-        else:
-            m = re.match(r"\s*(\d{1,2})\.(\d{1,2})\.(\d{4})\s*$", s)
-            if not m:
-                return None
-            d = dt.date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+        return dt.date(int(y), int(m), int(d))
     except ValueError:
         return None
-    if d > dt.date.today() or d.year < 1995:
+
+
+def parse_any_date(s):
+    """2026-10-29, 29.10.2026, 29. oktober 2026, 29 October 2026 or October 29, 2026 (text after it is ignored)."""
+    if not s or not isinstance(s, str):
+        return None
+    s = s.strip()
+    m = re.match(r"(\d{4})-(\d{2})-(\d{2})", s)
+    if m:
+        return _date(*m.groups())
+    m = re.match(r"(\d{1,2})\.(\d{1,2})\.(\d{4})(?!\d)", s)
+    if m:
+        return _date(m.group(3), m.group(2), m.group(1))
+    m = re.match(r"(\d{1,2})\.?\s+([A-Za-zæøåÆØÅ]+)\.?,?\s+(\d{4})(?!\d)", s)
+    if m and m.group(2).lower() in MONTHS:
+        return _date(m.group(3), MONTHS[m.group(2).lower()], m.group(1))
+    m = re.match(r"([A-Za-zæøåÆØÅ]+)\.?\s+(\d{1,2}),?\s+(\d{4})(?!\d)", s)
+    if m and m.group(1).lower() in MONTHS:
+        return _date(m.group(3), MONTHS[m.group(1).lower()], m.group(2))
+    return None
+
+
+def parse_date(s):
+    """A publish date: a real date, not in the future, not before 1995. Returns ISO text or None."""
+    d = parse_any_date(s)
+    if d is None or d > dt.date.today() or d.year < 1995:
         return None
     return d.isoformat()
+
+
+# "Publisert: 3. november 2025", "Published October 29, 2026". 'Oppdatert' / 'Updated' never count.
+PUBLISHED_TEXT = re.compile(r"\b(?:publisert|published|posted|lagt ut)\b\s*(?:den|on)?\s*:?\s*(" + DATE_TEXT + r")", re.I)
+
+
+def published_from_text(body):
+    m = PUBLISHED_TEXT.search(body or "")
+    return parse_date(m.group(1)) if m else None
 
 
 ARTICLE_TYPES = {"article", "newsarticle", "blogposting", "report", "techarticle", "pressrelease"}
@@ -442,8 +493,13 @@ PUBLISHED_META = ("article:published_time", "og:article:published_time", "datepu
                   "dc.date.issued", "dc.date.created", "publish_date", "article.published")
 
 
-def published_date(page):
-    """Publish date only. dateModified, og:updated_time, feed 'updated' are ignored."""
+def _is_modified_time(t):
+    return bool(re.search(r"modif|updat", t["class"])) or t["itemprop"] == "datemodified"
+
+
+def published_date(page, allow_bare_time=False):
+    """Publish date only. dateModified, og:updated_time, feed 'updated' and modified <time> tags are ignored.
+    A lone, unmarked <time datetime> is used only when the caller says the page is a news post."""
     for node in ld_nodes(page.jsonld):
         if set(ld_types(node)) & ARTICLE_TYPES:
             d = parse_date(node.get("datePublished"))
@@ -454,14 +510,38 @@ def published_date(page):
         if d:
             return d, "meta"
     for t in page.times:
-        cls = t["class"]
-        if re.search(r"modif|updat", cls):
+        if _is_modified_time(t):
             continue
-        if t["itemprop"] == "datepublished" or re.search(r"publish|posted|entry-date|post-date", cls):
+        if t["itemprop"] == "datepublished" or re.search(r"publish|posted|entry-date|post-date", t["class"]):
             d = parse_date(t["datetime"])
             if d:
                 return d, "time_tag"
+    if allow_bare_time and len(page.times) == 1 and not _is_modified_time(page.times[0]):
+        d = parse_date(page.times[0]["datetime"])
+        if d:
+            return d, "time_tag"
+    d = published_from_text(page.body)
+    if d:
+        return d, "text"
     return None, None
+
+
+def card_dates(page, base_url):
+    """{absolute url: ISO date} for links sitting in the same <article>/<li> as one <time datetime>
+    (a dated teaser on a news page). Cards with several dates or many links are ignored."""
+    out = {}
+    for card in page.cards:
+        ds = {parse_date(t["datetime"]) for t in card["times"] if not _is_modified_time(t)}
+        ds.discard(None)
+        urls = set()
+        for h in card["links"]:
+            h = h.strip()
+            if h and not h.startswith(("#", "mailto:", "tel:", "javascript:")):
+                urls.add(urllib.parse.urldefrag(urllib.parse.urljoin(base_url, h))[0])
+        if len(ds) == 1 and 0 < len(urls) <= 2:
+            for u in urls:
+                out.setdefault(u, next(iter(ds)))
+    return out
 
 
 # --------------------------------------------------------------------------
@@ -748,52 +828,195 @@ def clean_title(page):
     return " ".join(t.split())
 
 
+def title_ok(title):
+    return bool(title) and title.strip().lower() not in GENERIC_TITLES and not LABEL_RE.search(title)
+
+
+def news_url_ok(url, base):
+    return same_site(url, base) and not is_news_index(url) and not any(PRODUCT_SEG.fullmatch(x.lower()) for x in segs(url))
+
+
+def feed_urls(page, final, base):
+    out = []
+    for rel, typ, href in page.link_tags:
+        if "alternate" in rel and ("rss" in typ or "atom" in typ) and href:
+            u = urllib.parse.urljoin(final, href)
+            if same_site(u, base) and u not in out:
+                out.append(u)
+    return out[:2]
+
+
+def declares_wordpress(page):
+    return any("api.w.org" in rel for rel, _, _ in page.link_tags) or "wordpress" in page.meta.get("generator", "").lower()
+
+
+def _feed_date(s):
+    if not s:
+        return None
+    try:
+        return parse_date(email.utils.parsedate_to_datetime(s.strip()).date().isoformat())
+    except (TypeError, ValueError, IndexError):
+        return parse_date(s)
+
+
+def parse_feed(text):
+    """RSS or Atom -> [(title, link, publish date)]. Uses RSS pubDate, dc:date and Atom <published> only.
+    Atom <updated> is not a publish date and is ignored."""
+    up = (text or "").upper()
+    if not text or "<!ENTITY" in up or "<!DOCTYPE" in up[:3000]:
+        return []
+    try:
+        root = ET.fromstring(re.sub(r"^\s*<\?xml[^>]*\?>", "", text))
+    except ET.ParseError:
+        return []
+    out = []
+    for e in root.iter():
+        if not isinstance(e.tag, str) or e.tag.rsplit("}", 1)[-1].lower() not in ("item", "entry"):
+            continue
+        title = link = pub = None
+        for ch in e:
+            if not isinstance(ch.tag, str):
+                continue
+            n = ch.tag.rsplit("}", 1)[-1].lower()
+            if n == "title" and title is None:
+                title = " ".join("".join(ch.itertext()).split())
+            elif n == "link" and link is None:
+                if ch.get("href"):
+                    if ch.get("rel", "alternate") == "alternate":
+                        link = ch.get("href")
+                elif (ch.text or "").strip():
+                    link = ch.text.strip()
+            elif n in ("pubdate", "published", "date") and pub is None:
+                pub = (ch.text or "").strip()
+        d = _feed_date(pub)
+        if title and link and d:
+            out.append((title, link, d))
+    return out[:20]
+
+
+def wp_posts(origin, deadline):
+    """WordPress REST API: the site's own list of posts. 'date' is the post's publish date ('modified' is ignored)."""
+    r = FETCH(origin + "/wp-json/wp/v2/posts?per_page=6&_fields=date,link,title,type", deadline, "application/json")
+    if r.status != 200:
+        return []
+    try:
+        data = json.loads(r.text)
+    except ValueError:
+        return []
+    out = []
+    for p in data if isinstance(data, list) else []:
+        if not isinstance(p, dict) or p.get("type", "post") != "post":
+            continue
+        t = p.get("title")
+        title = html.unescape(re.sub(r"<[^>]+>", "", t.get("rendered", ""))) if isinstance(t, dict) else ""
+        d = parse_date(p.get("date"))
+        if title.strip() and p.get("link") and d:
+            out.append((" ".join(title.split()), p["link"], d))
+    return out
+
+
 def find_news(page, final, base, deadline, notes):
-    index_urls, art_urls = [], []
-    for u, text in abs_links(page, final):
-        if not same_site(u, base):
-            continue
-        if LABEL_RE.search(text or ""):
-            if is_news_index(u) and u not in index_urls:
+    """Dated news posts on the company's own site. Every item has a title, a URL on the verified site, a publish
+    date (never a modified/updated date) and 'linked_from', the page or feed of the site that points to it."""
+    items, seen = [], set()
+    st = {"rejected": 0, "stopped": False}
+
+    def add(title, url, published, source, linked_from):
+        key = url.rstrip("/")
+        if key not in seen:
+            seen.add(key)
+            items.append({"title": title, "url": url, "published": published, "date_source": source, "linked_from": linked_from})
+
+    try:  # 1. crawl: news links on the home page and on a news index page, each article checked on its own page
+        listing_dates = dict(card_dates(page, final))
+        index_urls, cands = [], []
+        for u, text in abs_links(page, final):
+            if not same_site(u, base):
+                continue
+            if LABEL_RE.search(text or ""):
+                if is_news_index(u) and u not in index_urls:
+                    index_urls.append(u)
+                continue
+            if is_article_url(u):
+                cands.append((u, False, final))
+            elif is_news_index(u) and u not in index_urls:
                 index_urls.append(u)
-            continue
-        if is_article_url(u):
-            art_urls.append(u)
-        elif is_news_index(u) and u not in index_urls:
-            index_urls.append(u)
-    for iu in sorted(index_urls, key=lambda x: len(segs(x)))[:2]:
-        try:
-            ip, ir = get_page(iu, deadline)
-        except FetchError:
-            continue
-        if ip:
+        for iu in sorted(index_urls, key=lambda x: len(segs(x)))[:2]:
+            try:
+                ip, ir = get_page(iu, deadline)
+            except FetchError:
+                continue
+            if not ip:
+                continue
+            cd = card_dates(ip, ir.url)
+            listing_dates.update(cd)
             for u, text in abs_links(ip, ir.url):
-                if same_site(u, base) and not LABEL_RE.search(text or "") and is_article_url(u) and u != iu:
-                    art_urls.append(u)
-    items, seen, rejected = [], set(), 0
-    for u in art_urls:
-        if u in seen:
-            continue
-        seen.add(u)
-        if len(seen) > 8:
-            break
-        try:
-            ap, _ = get_page(u, deadline)
+                if not news_url_ok(u, base) or LABEL_RE.search(text or "") or u == iu:
+                    continue
+                if is_article_url(u):
+                    cands.append((u, False, iu))
+                elif u in cd:  # a dated teaser card on a news page
+                    cands.append((u, True, iu))
+        tried = set()
+        for u, from_card, src in cands:
+            key = u.rstrip("/")
+            if key in tried:
+                continue
+            tried.add(key)
+            if len(tried) > 8:
+                break
+            try:
+                ap, _ = get_page(u, deadline)
+            except FetchError:
+                continue
+            if not ap:
+                continue
+            title = clean_title(ap)
+            nodes = list(ld_nodes(ap.jsonld))
+            article_signal = bool(set(t for n in nodes for t in ld_types(n)) & ARTICLE_TYPES) or ap.meta.get("og:type", "").lower() == "article"
+            is_product = any("product" in ld_types(n) for n in nodes) and not article_signal
+            looks_post = article_signal or is_article_url(u) or from_card
+            d, how = published_date(ap, allow_bare_time=looks_post)
+            if not d and u in listing_dates:
+                d, how = listing_dates[u], "listing"
+            if not title_ok(title) or not d or is_product or not looks_post:
+                st["rejected"] += 1
+                continue
+            add(title, u, d, how, src)
+    except TimeoutError:
+        st["stopped"] = True
+
+    if not st["stopped"] and len(items) < 3:
+        try:  # 2. the site's own feeds, then 3. its WordPress post list
+            for fu in feed_urls(page, final, base):
+                try:
+                    r = FETCH(fu, deadline, "application/rss+xml,application/atom+xml,application/xml;q=0.9,*/*;q=0.5")
+                except FetchError:
+                    continue
+                if r.status != 200:
+                    continue
+                for title, link, d in parse_feed(r.text):
+                    link = urllib.parse.urljoin(fu, link)
+                    if news_url_ok(link, base) and title_ok(title):
+                        add(title, link, d, "feed", fu)
+                    else:
+                        st["rejected"] += 1
+            if len(items) < 3 and declares_wordpress(page):
+                sp = urllib.parse.urlsplit(final)
+                origin = f"{sp.scheme}://{sp.netloc}"
+                for title, link, d in wp_posts(origin, deadline):
+                    if news_url_ok(link, base) and title_ok(title):
+                        add(title, link, d, "wp_rest", origin + "/wp-json/wp/v2/posts")
+                    else:
+                        st["rejected"] += 1
+        except TimeoutError:
+            st["stopped"] = True
         except FetchError:
-            continue
-        if not ap:
-            continue
-        title = clean_title(ap)
-        d, how = published_date(ap)
-        article_signal = bool(set(t for n in ld_nodes(ap.jsonld) for t in ld_types(n)) & ARTICLE_TYPES) or ap.meta.get("og:type", "").lower() == "article"
-        is_product = any("product" in ld_types(n) for n in ld_nodes(ap.jsonld)) and not article_signal
-        if (not title or title.lower() in GENERIC_TITLES or LABEL_RE.search(title) or not d or is_product
-                or not (article_signal or is_article_url(u))):
-            rejected += 1
-            continue
-        items.append({"title": title, "url": u, "published": d, "date_source": how})
-    if rejected:
-        notes.append(f"news: rejected {rejected} candidate(s) without title or explicit publish date")
+            pass
+    if st["rejected"]:
+        notes.append(f"news: rejected {st['rejected']} candidate(s) without title, explicit publish date or own-site link")
+    if st["stopped"]:
+        notes.append("news: stopped early, run budget exhausted")
     items.sort(key=lambda i: i["published"], reverse=True)
     return items[:5]
 
@@ -807,16 +1030,40 @@ NAV_AD = re.compile(r"arbeidsplassen\.nav\.no/stillinger/stilling/[0-9a-f-]{8,}"
 SEARCHY = re.compile(r"(^|&)(q|query|search|sok|s|keyword|keywords|page|filter)=", re.I)
 
 
+PROBE_PATHS = ("/karriere", "/jobb", "/ledige-stillinger", "/careers")
 AD_ID = re.compile(r"\d{5,}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
-APPLY_CUE = re.compile(r"\b(apply now|apply here|apply for this|application deadline|søknadsfrist|søk på stillingen|send søknad)\b", re.I)
+APPLY_CUE = re.compile(
+    r"\b(apply now|apply here|apply for this|apply today|how to apply|application deadline|søknadsfrist|søk på stillingen|"
+    r"søk nå|send (?:inn )?søknad|send (?:in )?(?:your )?application|vi søker|we are (?:looking|hiring)|ledig stilling)\b", re.I)
 LANDING_TITLE = re.compile(
     r"careers?|karriere|life at|graduates?|students?|trainee|internship|apprentice|vacancies|job opportunit|"
     r"ledige stillinger|meet our|recruitment|rekruttering|why work|working at|jobs at", re.I)
+DEADLINE_TEXT = re.compile(r"\b(?:søknadsfrist|frist|apply by|application deadline|deadline)\b\s*:?\s*(" + DATE_TEXT + r")", re.I)
 
 
-def looks_like_single_ad(url, page):
-    path = urllib.parse.urlsplit(url).path
-    return bool(AD_ID.search(path)) and bool(APPLY_CUE.search(page.body)) and not LANDING_TITLE.search(page.h1 or "")
+def is_child_of(url, landing_urls):
+    sp = urllib.parse.urlsplit(url)
+    for lu in landing_urls:
+        lp = urllib.parse.urlsplit(lu).path.rstrip("/")
+        if lp and sp.path.startswith(lp + "/") and len(sp.path.rstrip("/")) > len(lp) + 1 and host_of(lu) == host_of(url):
+            return True
+    return False
+
+
+def looks_like_single_ad(url, page, landing_urls=()):
+    """One ad: an id in the URL or a page under the careers page, an apply/deadline cue, and a title that is not a landing title."""
+    anchored = bool(AD_ID.search(urllib.parse.urlsplit(url).path)) or is_child_of(url, landing_urls)
+    return anchored and bool(APPLY_CUE.search(page.body)) and not LANDING_TITLE.search(page.h1 or "")
+
+
+def ad_deadline(page, posting):
+    """Last application date from JSON-LD validThrough, else a labelled 'Søknadsfrist: <date>' in the text."""
+    if posting:
+        d = parse_any_date(str(posting.get("validThrough") or ""))
+        if d:
+            return d
+    m = DEADLINE_TEXT.search(page.body)
+    return parse_any_date(m.group(1)) if m else None
 
 
 def is_ats(url):
@@ -833,14 +1080,14 @@ def looks_like_ad(url, landing_urls, base):
         return False
     if not (same_site(url, base) or is_ats(url)):
         return False
-    for lu in landing_urls:
-        lp = urllib.parse.urlsplit(lu).path.rstrip("/")
-        if lp and sp.path.startswith(lp + "/") and len(sp.path.rstrip("/")) > len(lp) + 1 and host_of(lu) == h:
-            return True
+    if is_child_of(url, landing_urls):
+        return True
     return bool(JOB_AD_PATH.search(sp.path))
 
 
 def find_jobs(c, page, final, base, deadline, notes):
+    """Open single job ads for this company, linked from its own site (directly, from its careers page, or from
+    the job board its careers page points to). Each has 'linked_from'. Expired ads are left out."""
     landing, ats = [], []
     for u, text in abs_links(page, final):
         if same_site(u, base) and (JOB_PATH.search(urllib.parse.urlsplit(u).path) or JOB_PATH.search(text or "")):
@@ -850,59 +1097,96 @@ def find_jobs(c, page, final, base, deadline, notes):
             ats.append(u)
     landing = sorted(set(landing), key=lambda x: len(segs(x)))[:2]
     ats = list(dict.fromkeys(ats))[:2]
-    cands = []
-    pages = [(final, page)]
-    for lu in landing + ats[:1]:
-        try:
-            lp, lr = get_page(lu, deadline)
-        except FetchError:
-            continue
-        if lp:
-            pages.append((lr.url, lp))
-    for pu, pg in pages:
-        for u, text in abs_links(pg, pu):
-            if JOB_LABEL.search(text or ""):
+    stopped = False
+    pages, have, cands = [(final, page)], {final}, {}
+    try:
+        sp = urllib.parse.urlsplit(final)
+        origin = f"{sp.scheme}://{sp.netloc}"
+        if not landing and not ats:  # no careers link on the home page: try the usual addresses
+            for p in PROBE_PATHS:
+                try:
+                    pp, pr = get_page(origin + p, deadline)
+                except FetchError:
+                    continue
+                if pp and same_site(pr.url, base) and JOB_PATH.search(urllib.parse.urlsplit(pr.url).path):
+                    landing.append(pr.url)
+                    pages.append((pr.url, pp))
+                    have.add(pr.url)
+                    break
+        for lu in landing + ats[:1]:
+            if lu in have:
                 continue
-            if u not in landing and u != pu and looks_like_ad(u, landing + ats, base):
-                cands.append(u)
-    cands = list(dict.fromkeys(cands))[:10]
+            try:
+                lp, lr = get_page(lu, deadline)
+            except FetchError:
+                continue
+            have.add(lu)
+            if lp:
+                pages.append((lr.url, lp))
+        for pu, pg in pages:
+            for u, text in abs_links(pg, pu):
+                if JOB_LABEL.search(text or ""):
+                    continue
+                if u not in landing and u != pu and u not in cands and looks_like_ad(u, landing + ats, base):
+                    cands[u] = pu
+    except TimeoutError:
+        stopped = True
+    cands = dict(list(cands.items())[:10])
     own_name, orgnr = c["name"], c["orgnr"]
     parent_name = c.get("_parent_name")
-    jobs, rejected = [], 0
-    for u in cands:
-        try:
-            ap, _ = get_page(u, deadline)
-        except FetchError:
-            continue
-        if not ap:
-            continue
-        postings = [n for n in ld_nodes(ap.jsonld) if "jobposting" in ld_types(n)]
-        if len(postings) > 1:
-            rejected += 1
-            continue
-        title, ok = None, False
-        if postings:
-            n = postings[0]
-            title = n.get("title") or n.get("name")
-            org = n.get("hiringOrganization")
-            org_name = org.get("name") if isinstance(org, dict) else org
-            if isinstance(org_name, str) and org_name.strip():
-                ok = same_company(org_name, own_name) or orgnr_in(json.dumps(org) if isinstance(org, dict) else "", orgnr)
+    today = dt.date.today()
+    jobs, rejected, expired = [], 0, 0
+    try:
+        for u, src in cands.items():
+            try:
+                ap, _ = get_page(u, deadline)
+            except FetchError:
+                continue
+            if not ap:
+                continue
+            postings = [n for n in ld_nodes(ap.jsonld) if "jobposting" in ld_types(n)]
+            if len(postings) > 1:
+                rejected += 1
+                continue
+            posting = postings[0] if postings else None
+            on_site = same_site(u, base)
+            # On the verified site the company's name is enough; on a job board the full name or org number is needed.
+            named = evidence(ap.body, orgnr, own_name) is not None or (on_site and name_in(ap.body, own_name))
+            if posting:
+                title = posting.get("title") or posting.get("name")
+                org = posting.get("hiringOrganization")
+                org_name = org.get("name") if isinstance(org, dict) else org
+                if isinstance(org_name, str) and org_name.strip():
+                    ok = same_company(org_name, own_name) or orgnr_in(json.dumps(org) if isinstance(org, dict) else "", orgnr)
+                else:
+                    ok = named
             else:
-                ok = evidence(ap.body, orgnr, own_name) is not None
-        else:
-            # Without JobPosting data, only accept a page that clearly is one ad:
-            # an id in the URL, an apply/deadline cue, a non-landing title, and the company named.
-            title = ap.h1
-            ok = looks_like_single_ad(u, ap) and evidence(ap.body, orgnr, own_name) is not None
-        if ok and parent_name and not evidence(ap.body, orgnr, own_name) and name_in(ap.body, parent_name) and not postings:
-            ok = False
-        if not ok or not title or str(title).strip().lower() in GENERIC_TITLES:
-            rejected += 1
-            continue
-        jobs.append({"title": " ".join(str(title).split()), "url": u})
+                title = ap.h1
+                ok = looks_like_single_ad(u, ap, landing + ats) and named
+            if ok and parent_name and not posting and not evidence(ap.body, orgnr, own_name) and name_in(ap.body, parent_name):
+                ok = False
+            if not ok or not title or str(title).strip().lower() in GENERIC_TITLES:
+                rejected += 1
+                continue
+            until = ad_deadline(ap, posting)
+            if until and until < today:
+                expired += 1
+                continue
+            job = {"title": " ".join(str(title).split()), "url": u, "linked_from": src}
+            posted = parse_date(posting.get("datePosted")) if posting else None
+            if posted:
+                job["posted"] = posted
+            if until:
+                job["valid_through"] = until.isoformat()
+            jobs.append(job)
+    except TimeoutError:
+        stopped = True
     if rejected:
         notes.append(f"jobs: rejected {rejected} candidate(s) (listing page, other organisation or no evidence it is this company's ad)")
+    if expired:
+        notes.append(f"jobs: left out {expired} expired ad(s)")
+    if stopped:
+        notes.append("jobs: stopped early, run budget exhausted")
     seen, uniq = set(), []
     for j in jobs:
         if j["url"] not in seen:
@@ -979,8 +1263,18 @@ def research(orgnr, raw, prefetched, deadline, opts):
         if info["verified"] and page:
             base = host_of(final)
             res["social"] = extract_social(page, final, c, info["evidence"], notes)
-            res["news"] = find_news(page, final, base, deadline, notes)
-            res["jobs"] = find_jobs(c, page, final, base, deadline, notes)
+            t0 = time.monotonic()
+            news_deadline = min(deadline, t0 + max(5.0, (deadline - t0) * 0.55))  # keep time for the jobs step
+            try:
+                res["news"] = find_news(page, final, base, news_deadline, notes)
+            except TimeoutError:
+                notes.append("news: stopped early, run budget exhausted")
+            try:
+                res["jobs"] = find_jobs(c, page, final, base, deadline, notes)
+            except TimeoutError:
+                notes.append("jobs: stopped early, run budget exhausted")
+            if any("stopped early" in n for n in notes):
+                res["status"] = "partial"
         elif info["url"]:
             notes.append("website not verified as this company's own: social links, news and jobs not collected")
     except TimeoutError:
