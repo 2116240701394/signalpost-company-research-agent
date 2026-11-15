@@ -619,7 +619,7 @@ def prefetch_registry(orgnrs, deadline):
                 if r.status != 200:
                     continue
                 for e in (json.loads(r.text).get("_embedded") or {}).get(kind, []):
-                    found[e["organisasjonsnummer"]] = (kind[:-1].replace("enhet", "enhet"), e)
+                    found[e["organisasjonsnummer"]] = ("enhet" if kind == "enheter" else "underenhet", e)
             except TimeoutError:
                 return found
             except Exception:
