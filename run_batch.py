@@ -632,12 +632,12 @@ def fetch_registry_single(orgnr, deadline):
     for kind in ("enheter", "underenheter"):
         r = FETCH(f"{BRREG}/{kind}/{orgnr}", deadline, "application/json")
         if r.status == 200:
-            return kind[:-1], json.loads(r.text), "ok"
+            return ("enhet" if kind == "enheter" else "underenhet"), json.loads(r.text), "ok"
         if r.status == 410:
             try:
-                return kind[:-1], json.loads(r.text), "deleted"
+                return ("enhet" if kind == "enheter" else "underenhet"), json.loads(r.text), "deleted"
             except Exception:
-                return kind[:-1], {}, "deleted"
+                return ("enhet" if kind == "enheter" else "underenhet"), {}, "deleted"
         if r.status in (404,):
             continue
         raise FetchError(f"registry HTTP {r.status}")
